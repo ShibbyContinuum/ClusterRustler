@@ -1,0 +1,26 @@
+[package]
+name = "ClusterRustler"
+version = "0.1.0"
+authors = ["Shibby"]
+
+[dependencies]
+persistent = "0.1.0"
+rand = "0.3"
+memmap = "0.4.0"
+rust-crypto = "^0.2"
+serde = "*"
+serde_json = "*"
+serde_macros = "*"
+
+[dependencies.bodyparser]
+
+git = "https://github.com/iron/body-parser.git"
+
+[dependencies.iron]
+
+version = "*"
+
+[dependencies.macaroons]
+
+git = "https://github.com/panicbit/rust-macaroons.git"
+branch = "dev"
