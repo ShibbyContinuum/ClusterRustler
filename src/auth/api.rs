@@ -1,8 +1,12 @@
 use rand::chacha::ChaChaRng;
 use rand::os::OsRng;
+use rand::Rng;
+use rand::SeedableRng;
+
+use core::array::FixedSizeArray;
 
 use macaroons::token::Token;
-use macaroons::caveat::{Caveat, Predicate};
+use macaroons::caveat::{Caveat};
 use macaroons::verifier::Verifier;
 
 use std::io::Write;
@@ -15,12 +19,12 @@ struct Key {
 impl Key {
     fn new() -> Key {
         let mut key_map = Mmap::anonymous(512, Protection::ReadWrite).unwrap();
-        let osrng = Osrng::new();
-        let key_nonce: [u8; 512] = [0; 512];
-        osrng.fill_bytes(&mut key_nonce);
-        let chacha_rng = ChaChaRng::new_unseeded();
-        chacha_rng.reseed(& mut key_nonce);
-        unsafe { key_map.as_mut_slice() }.write(chacha_rng).unwrap();
+        let osrng = OsRng::new().unwrap();
+        let key_nonce: u32 = osrng.next_u32();
+        let chacha_rng = SeedableRng::from_seed(key_nonce);
+        let new_key = [0; 512];
+        let new_key = chacha_rng.fill_bytes(&mut new_key);
+        unsafe { key_map.as_mut_slice() }.write(new_key.as_slice()).unwrap();
         let key = Key {
             key: key_map
         };
@@ -67,28 +71,45 @@ impl Macaroon_Auth {
             new_token: None
         }
     }
-    
+
+//  fn gen_service_token()
+//  This fancy little subversion of the system is for testing of the greater
+//  system until we can get add_caveat() to take a vec.  Some things to think
+//  about add_caveat() and vector is that order absolutely does matter for 
+//  macaroons.
+
     fn gen_service_token(mint: Macaroon_Mint, key: Key) -> Token {
         let service_caveat = Caveat::first_party(b"service = TestService".to_vec());
         let ip_caveat = Caveat::first_party(b"ip = 67.205.61.180".to_vec());
         let user_caveat = Caveat::first_party(b"user = test_user".to_vec());
-        Token::new(key.key.to_vec(), self.nonce.to_vec(), None)
+        Token::new(key.key.as_slice(), mint.nonce.to_vec(), None)
               .add_caveat(service_caveat)
               .add_caveat(ip_caveat)
               .add_caveat(user_caveat)
     }
 
+//  build_verifier()
+//  add_matcher() allows you to check the caveats, currently this
+//  matches bytes but it /could/ theoretically match anything.
+//  We might also be able to use nom to build the verifier.
+//  github.com/geal/nom
+
     fn build_verifier() -> Verifier {
         Verifier::new()
                  .add_matcher(|c| c == "service = TestService")
                  .add_matcher(|c| c == "ip = 67.205.61.180")
-                 .add-matcher(|c| c == "user = test_user")
-        }
+                 .add_matcher(|c| c == "user = test_user")
     }
+    
+//  fn verify()
+//  Uses the "Verifier" type from self.build_verifier()
+//  verify() takes a "Key" type, and the "Token" type.
+//  It is used to check if the Token is valid.
+//  bool = true, valid: bool = false, invalid.
 
     fn verify(key: Key, token: Token) -> bool {
-        let verifier = build_verifier();
-        let verified = verifier.verify(key, &token);
+        let verifier = Macaroon_Auth::build_verifier();
+        let verified = verifier.verify(key.key.as_slice(), &token);
         verified
     }
 
@@ -101,10 +122,9 @@ struct Macaroon_Mint {
 
 impl Macaroon_Mint {
 
-    static chacha_rng: ChaChaRng = Macaroon_Mint::nonce_rng();
-
-    pub fn new(chacha_rng: ChaChaRng, caveats: Vec<Caveat>) -> Macaroon_Mint {
-        let mut identifier_nonce: [u8, 512] = [0; 512];
+    pub fn new() -> Macaroon_Mint {
+        let chacha_rng = Macaroon_Mint::nonce_rng();
+        let mut identifier_nonce: [u8; 512] = [0; 512];
         chacha_rng.fill_bytes(&mut identifier_nonce);
         Macaroon_Mint {
             nonce: identifier_nonce,
@@ -112,14 +132,25 @@ impl Macaroon_Mint {
         }
     }
 
+//  nonce_rng() 
+//  Generates a ChaChaRng Stream for identifier tokens
+//  This is only used for identifier tokens and should
+//  not be used to create keys.  You have been warned.
+
     pub fn nonce_rng() -> ChaChaRng {
-        let osrng = OsRng::new();
-        let nonce: [u8; 512] = [0; 512];
-        osrng.fill_bytes(&mut nonce);
-        let chacha_rng = ChaChaRng::new_unseeded();
-        chacha_rng.reseed(nonce);
+        let osrng = OsRng::new().unwrap();
+        let nonce: u32 = osrng.next_u32();
+        let chacha_rng = SeedableRng::from_seed(nonce);
         chacha_rng
     }
+
+//  service_caveats()
+//  Generates the default service caveats, these caveats
+//  are used to define a the location and minimum credentials
+//  necessary for the service, you can also think of this as
+//  your "identity token" or "service identity token".
+//  this function is currently worthless until add_caveat()
+//  can take a Vec. TODO: Submit PR to allow add_caveat to take a vector
 
     pub fn service_caveats() -> Vec<Caveat> {
         let mut caveats: Vec<Caveat> = Vec::new();
