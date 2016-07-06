@@ -10,6 +10,7 @@ use macaroons::caveat::{Caveat};
 use macaroons::verifier::Verifier;
 
 use std::io::Write;
+use std::prelude;
 use memmap::{Mmap, Protection};
 
 struct Key {
@@ -23,7 +24,7 @@ impl Key {
         let key_nonce: u32 = osrng.next_u32();
         let chacha_rng = SeedableRng::from_seed(key_nonce);
         let new_key = [0; 512];
-        let new_key = chacha_rng.fill_bytes(&mut new_key);
+        let new_key = Rng::fill_bytes(chacha_rng, &mut new_key);
         unsafe { key_map.as_mut_slice() }.write(new_key.as_slice()).unwrap();
         let key = Key {
             key: key_map
@@ -113,7 +114,7 @@ impl Macaroon_Mint {
     pub fn new() -> Macaroon_Mint {
         let chacha_rng = Macaroon_Mint::nonce_rng();
         let mut identifier_nonce: [u8; 512] = [0; 512];
-        chacha_rng.fill_bytes(&mut identifier_nonce);
+        chacha_rng.fill_bytes(&mut identifier_nonce.as_slice());
         Macaroon_Mint {
             nonce: identifier_nonce,
             caveats: Macaroon_Mint::service_caveats()
@@ -125,7 +126,7 @@ impl Macaroon_Mint {
 //  This is only used for identifier tokens and should
 //  not be used to create keys.  You have been warned.
 
-    pub fn nonce_rng() -> ChaChaRng {
+    pub fn nonce_rng<ChaChaRng: SeedableRng<u32>>() -> ChaChaRng {
         let osrng = OsRng::new().unwrap();
         let nonce: u32 = osrng.next_u32();
         let chacha_rng = SeedableRng::from_seed(nonce);
